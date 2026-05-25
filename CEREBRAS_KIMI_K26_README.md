@@ -63,7 +63,9 @@ sudo apt install -y git git-lfs ripgrep curl build-essential
 # If VS Code is not installed yet and snap is available:
 # sudo snap install code --classic
 
-curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+# For the latest nvm install command, see:
+# https://github.com/nvm-sh/nvm#install--update-script
+# After installing nvm and restarting your shell, run:
 export NVM_DIR="$HOME/.nvm"
 . "$NVM_DIR/nvm.sh"
 nvm install 20.19.2
@@ -87,9 +89,9 @@ npm install -g pnpm@10.8.1
 git lfs install
 ```
 
-You also need Visual Studio Code with the `code` CLI on your `PATH`.
+You also need Visual Studio Code. The `code` CLI is optional and is only needed for the shell-based VSIX install path.
 
-- On macOS, open VS Code, press `Cmd+Shift+P`, run `Shell Command: Install 'code' command in PATH`, then restart your terminal.
+- On macOS, if you want the `code` CLI, open VS Code, press `Cmd+Shift+P`, run `Shell Command: Install 'code' command in PATH`, then restart your terminal.
 - On Linux, the `code` command is usually already on `PATH` if VS Code was installed from the official package or Snap package.
 
 Verify your toolchain before continuing:
@@ -99,12 +101,9 @@ node --version
 pnpm --version
 git lfs version
 rg --version
-code --version
 ```
 
-Expected versions:
-- Node.js: `v20.19.2`
-- pnpm: `10.8.1`
+All four commands should print a version string without errors. If you plan to install the VSIX from the shell instead of the VS Code GUI, `code --version` should also work.
 
 ## Use The Correct Repo And Branch
 
@@ -151,22 +150,18 @@ git push -u ryanl-cerebras codex/cerebras-kimi-k2.6
 
 </details>
 
-## Install Dependencies And Build
+## Install Dependencies
 
 From the repo root:
 
 ```bash
-git lfs install
 git lfs pull
 pnpm install
-pnpm build
 ```
-
-This should produce a VSIX under `bin/`, for example `bin/kilo-code-4.126.1.vsix`.
 
 ## Quick Regression Check
 
-Run the provider regression test before trying the UI or CLI paths:
+Run the provider regression test before building the VSIX:
 
 ```bash
 pnpm --dir src exec vitest run api/providers/__tests__/cerebras.spec.ts
@@ -177,15 +172,36 @@ Expected result:
 
 This validates the K2.6 model entry, preserved `<think>` replay, and streamed reasoning handling.
 
-## Recommended Test Path: Build And Install The VSIX
+## Install The VSIX Into VS Code
 
-Install the newest VSIX into VS Code:
+Build the extension:
+
+```bash
+pnpm build
+```
+
+Print the absolute path of the built VSIX:
+
+```bash
+ls -1v "$(pwd)/bin"/kilo-code-*.vsix | tail -n1
+```
+
+This prints the file path used in the next step. You can paste it into the shell install command or select the same file in the VS Code `Install from VSIX...` dialog.
+
+Install the newest VSIX from the shell:
 
 ```bash
 code --install-extension "$(ls -1v bin/kilo-code-*.vsix | tail -n1)" --force
 ```
 
-Then open any writable test folder in VS Code and use the Kilo Code panel.
+If you'd rather not use the shell:
+1. Open VS Code.
+2. Open the Extensions panel (`Cmd+Shift+X` on macOS, `Ctrl+Shift+X` on Linux).
+3. Click the `...` menu at the top of the panel, then choose `Install from VSIX...`.
+4. Select the file printed by the command above.
+5. Reload the window when prompted.
+
+After installing, look for the Kilo Code icon in the VS Code activity bar on the left side. Click it to open the Kilo panel.
 
 ## How To Test In Kilo Code
 
