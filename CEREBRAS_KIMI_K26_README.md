@@ -28,6 +28,21 @@ Expected:
 
 If any of those checks fail, stop. You are on the wrong repo or branch.
 
+## Publish The Fork And Branch
+
+If the fork does not exist yet, create it with:
+
+```bash
+gh repo fork Kilo-Org/kilocode --org ryanl-cerebras --clone=false --remote=false
+```
+
+Then push this branch to the fork:
+
+```bash
+git remote add ryanl-cerebras https://github.com/ryanl-cerebras/kilocode.git
+git push -u ryanl-cerebras codex/cerebras-kimi-k2.6
+```
+
 ## Prerequisites
 
 - Node `20.19.2`
