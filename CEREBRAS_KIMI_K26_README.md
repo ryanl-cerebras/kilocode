@@ -130,6 +130,20 @@ Expected:
 
 If any of those checks fail, stop. You are on the wrong repo or branch.
 
+## Confirm Model Access
+
+Before installing dependencies or building the VSIX, confirm that your Cerebras API key can see `moonshotai-kimi-k2.6`:
+
+```bash
+curl -s -H "Authorization: Bearer $CEREBRAS_API_KEY" https://api.cerebras.ai/v1/models | grep -c "moonshotai-kimi-k2.6"
+```
+
+Expected result:
+- `1` means your key can access the model
+- `0` means your key does not currently see the model, or `CEREBRAS_API_KEY` is not set correctly
+
+If this check returns `0`, stop and fix API access before continuing.
+
 <details>
 <summary>Maintainer-only: publishing the fork</summary>
 
