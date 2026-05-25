@@ -53,6 +53,16 @@ describe("CerebrasHandler", () => {
 			expect(info).toEqual(cerebrasModels["llama-3.3-70b"])
 		})
 
+		it("should return Kimi K2.6 model info", () => {
+			const kimiHandler = new CerebrasHandler({
+				cerebrasApiKey: "test-api-key",
+				apiModelId: "moonshotai-kimi-k2.6" as CerebrasModelId,
+			})
+			const { id, info } = kimiHandler.getModel()
+			expect(id).toBe("moonshotai-kimi-k2.6")
+			expect(info).toEqual(cerebrasModels["moonshotai-kimi-k2.6"])
+		})
+
 		it("should fallback to default model when apiModelId is not provided", () => {
 			const handlerWithoutModel = new CerebrasHandler({ cerebrasApiKey: "test" })
 			const { id } = handlerWithoutModel.getModel()
@@ -144,6 +154,88 @@ describe("CerebrasHandler", () => {
 
 			const requestBody = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string)
 			expect(requestBody.temperature).toBe(1.5) // Should be clamped
+		})
+
+		it("should preserve think tags for Kimi K2.6 assistant history replay", async () => {
+			const kimiHandler = new CerebrasHandler({
+				cerebrasApiKey: "test-api-key",
+				apiModelId: "moonshotai-kimi-k2.6" as CerebrasModelId,
+			})
+
+			vi.mocked(fetch).mockResolvedValueOnce({
+				ok: true,
+				body: { getReader: () => ({ read: () => Promise.resolve({ done: true }), releaseLock: vi.fn() }) },
+			} as any)
+
+			const messages = [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "<think>Preserved chain of thought</think>\nFinal answer" }],
+				},
+			] as any
+
+			await kimiHandler.createMessage("test", messages).next()
+
+			const requestBody = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string)
+			expect(requestBody.messages[1]).toEqual({
+				role: "assistant",
+				content: "<think>Preserved chain of thought</think>\nFinal answer",
+			})
+		})
+
+		it("should continue stripping think tags for non-Kimi Cerebras models", async () => {
+			vi.mocked(fetch).mockResolvedValueOnce({
+				ok: true,
+				body: { getReader: () => ({ read: () => Promise.resolve({ done: true }), releaseLock: vi.fn() }) },
+			} as any)
+
+			const messages = [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "<think>Hidden reasoning</think>\nVisible answer" }],
+				},
+			] as any
+
+			await handler.createMessage("test", messages).next()
+
+			const requestBody = JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string)
+			expect(requestBody.messages[1]).toEqual({
+				role: "assistant",
+				content: "Visible answer",
+			})
+		})
+
+		it("should surface reasoning fields from streamed Cerebras deltas", async () => {
+			const streamLines = [
+				'data: {"choices":[{"delta":{"reasoning":"First step"}}]}',
+				'data: {"choices":[{"delta":{"reasoning_content":"Second step"}}]}',
+				"data: [DONE]",
+			]
+			const encodedChunks = streamLines.map((line) => new TextEncoder().encode(`${line}\n`))
+			let index = 0
+
+			vi.mocked(fetch).mockResolvedValueOnce({
+				ok: true,
+				body: {
+					getReader: () => ({
+						read: vi.fn().mockImplementation(() => {
+							if (index >= encodedChunks.length) return Promise.resolve({ done: true, value: undefined })
+							return Promise.resolve({ done: false, value: encodedChunks[index++] })
+						}),
+						releaseLock: vi.fn(),
+					}),
+				},
+			} as any)
+
+			const chunks: Array<{ type: string; text?: string }> = []
+			for await (const chunk of handler.createMessage("test", [])) {
+				chunks.push(chunk as any)
+			}
+
+			expect(chunks.filter((chunk) => chunk.type === "reasoning")).toEqual([
+				{ type: "reasoning", text: "First step" },
+				{ type: "reasoning", text: "Second step" },
+			])
 		})
 	})
 

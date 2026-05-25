@@ -25,6 +25,7 @@ const CEREBRAS_DEFAULT_TEMPERATURE = 0
 const CEREBRAS_DEFAULT_MAX_TOKENS = 8_192
 const CEREBRAS_INTEGRATION_HEADER = "X-Cerebras-3rd-Party-Integration"
 const CEREBRAS_INTEGRATION_NAME = "kilocode"
+const KIMI_K26_MODEL_ID = "moonshotai-kimi-k2.6"
 
 /**
  * Removes thinking tokens from text to prevent model confusion when processing conversation history.
@@ -33,6 +34,10 @@ const CEREBRAS_INTEGRATION_NAME = "kilocode"
 function stripThinkingTokens(text: string): string {
 	// Remove <think>...</think> blocks entirely, including nested ones
 	return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim()
+}
+
+function shouldPreserveThinkingTokens(modelId: string): boolean {
+	return modelId.toLowerCase() === KIMI_K26_MODEL_ID
 }
 
 /**
@@ -68,15 +73,21 @@ function flattenMessageContent(content: any): string {
 
 /**
  * Converts OpenAI messages to Cerebras-compatible format with simple string content.
- * Also strips thinking tokens from assistant messages to prevent model confusion.
+ * Most Cerebras models should not see their prior `<think>` traces replayed, but
+ * Kimi K2.6 relies on preserved thinking across turns for agentic workflows.
  */
-function convertToCerebrasMessages(openaiMessages: any[]): Array<{ role: string; content: string }> {
+function convertToCerebrasMessages(
+	openaiMessages: any[],
+	modelId: string,
+): Array<{ role: string; content: string }> {
+	const preserveThinkingTokens = shouldPreserveThinkingTokens(modelId)
 	return openaiMessages
 		.map((msg) => {
 			let content = flattenMessageContent(msg.content)
 
-			// Strip thinking tokens from assistant messages to prevent confusion
-			if (msg.role === "assistant") {
+			// Strip thinking tokens from assistant messages unless the model is
+			// explicitly validated to benefit from raw `<think>` replay.
+			if (msg.role === "assistant" && !preserveThinkingTokens) {
 				content = stripThinkingTokens(content)
 			}
 
@@ -138,7 +149,7 @@ export class CerebrasHandler extends BaseProvider implements SingleCompletionHan
 		// Convert Anthropic messages to OpenAI format, then flatten for Cerebras
 		// This will automatically strip thinking tokens from assistant messages
 		const openaiMessages = convertToOpenAiMessages(messages)
-		const cerebrasMessages = convertToCerebrasMessages(openaiMessages)
+		const cerebrasMessages = convertToCerebrasMessages(openaiMessages, model)
 
 		// Prepare request body following Cerebras API specification exactly
 		// Use conservative default to avoid premature rate limiting (Cerebras reserves quota upfront)
@@ -245,6 +256,16 @@ export class CerebrasHandler extends BaseProvider implements SingleCompletionHan
 									for (const chunk of matcher.update(content)) {
 										yield chunk
 									}
+								}
+
+								const reasoningText =
+									typeof parsed.choices?.[0]?.delta?.reasoning === "string"
+										? parsed.choices[0].delta.reasoning
+										: typeof parsed.choices?.[0]?.delta?.reasoning_content === "string"
+											? parsed.choices[0].delta.reasoning_content
+											: undefined
+								if (reasoningText?.trim()) {
+									yield { type: "reasoning", text: reasoningText }
 								}
 
 								// Handle usage information if available

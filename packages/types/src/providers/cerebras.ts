@@ -6,6 +6,17 @@ export type CerebrasModelId = keyof typeof cerebrasModels
 export const cerebrasDefaultModelId: CerebrasModelId = "gpt-oss-120b"
 
 export const cerebrasModels = {
+	"moonshotai-kimi-k2.6": {
+		maxTokens: 16384,
+		contextWindow: 262144,
+		supportsImages: false,
+		supportsPromptCache: false,
+		inputPrice: 0,
+		outputPrice: 0,
+		preserveReasoning: true,
+		description:
+			"Kimi K2.6 on Cerebras dedicated endpoints\n\n• 256K context window\n• Preserve `<think>` history across turns for agentic workflows",
+	},
 	"zai-glm-4.6": {
 		maxTokens: 16384, // consistent with their other models
 		contextWindow: 131072,
