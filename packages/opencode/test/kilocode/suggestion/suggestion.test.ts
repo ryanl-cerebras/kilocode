@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { Effect } from "effect"
 import { Telemetry } from "@kilocode/kilo-telemetry"
-import { WithInstance } from "../../../src/project/with-instance"
+import { Command } from "../../../src/command"
+import { reviewCommand } from "../../../src/kilocode/review/command"
+import DESCRIPTION from "../../../src/kilocode/suggestion/tool.txt"
+import { provideTestInstance } from "../../fixture/fixture"
 import { Suggestion } from "../../../src/kilocode/suggestion"
 import { resolvePrompt } from "../../../src/kilocode/suggestion/tool"
+import { SessionID } from "../../../src/session/schema"
 import { tmpdir } from "../../fixture/fixture"
 
 afterEach(() => {
@@ -10,35 +15,55 @@ afterEach(() => {
 })
 
 describe("suggestion", () => {
-  test("resolves review command arguments into static templates", async () => {
-    await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
-      directory: tmp.path,
-      fn: async () => {
-        const out = await resolvePrompt("/local-review-uncommitted --focus telemetry")
+  test("limits worktree review suggestions to managed Agent Manager sessions", () => {
+    expect(DESCRIPTION).toContain("only as the action prompt for an existing Agent Manager managed worktree session")
+    expect(DESCRIPTION).toContain("CLI/TUI")
+    expect(DESCRIPTION).toContain("ordinary sidebar")
+    expect(DESCRIPTION).toContain("Agent Manager Local")
+    expect(DESCRIPTION).toContain("unassigned session")
+    expect(DESCRIPTION).toContain("unmanaged Git worktree")
+    expect(DESCRIPTION).toContain("prefer `/review uncommitted`")
+  })
 
-        expect(out).toContain("## User Input\n\n--focus telemetry")
-        expect(out).not.toContain("$ARGUMENTS")
-      },
+  test("resolves review command arguments into static templates", async () => {
+    const commands = Command.Service.of({
+      get: (name) => Effect.succeed(name === "review" ? reviewCommand() : undefined),
+      list: () => Effect.succeed([reviewCommand()]),
     })
+    const out = await Effect.runPromise(resolvePrompt("/review uncommitted --focus telemetry", commands))
+
+    expect(out).toContain("## User Input\n\nuncommitted --focus telemetry")
+    expect(out).not.toContain("$ARGUMENTS")
+  })
+
+  test("substitutes worktree review arguments into the static template", async () => {
+    const commands = Command.Service.of({
+      get: (name) => Effect.succeed(name === "review" ? reviewCommand() : undefined),
+      list: () => Effect.succeed([reviewCommand()]),
+    })
+    const out = await Effect.runPromise(resolvePrompt("/review worktree focus on committed changes", commands))
+
+    expect(out).toContain("## User Input\n\nworktree focus on committed changes")
+    expect(out).toContain("/review worktree [guidance]")
+    expect(out).not.toContain("$ARGUMENTS")
   })
 
   test("show adds pending request with blocking flag", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const pending = Suggestion.show({
           sessionID: "ses_test",
-          text: "Run review?",
+          text: "Run tests?",
           blocking: false,
-          actions: [{ label: "Start", description: "Run it", prompt: "/local-review-uncommitted" }],
+          actions: [{ label: "Start", description: "Run them", prompt: "/test" }],
         })
 
         const list = await Suggestion.list()
         expect(list).toHaveLength(1)
         expect(list[0]?.blocking).toBe(false)
-        expect(list[0]?.text).toBe("Run review?")
+        expect(list[0]?.text).toBe("Run tests?")
 
         await Suggestion.dismiss(list[0]!.id)
         await expect(pending).rejects.toBeInstanceOf(Suggestion.DismissedError)
@@ -48,14 +73,14 @@ describe("suggestion", () => {
 
   test("accept resolves selected action and removes pending request", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const ask = Suggestion.show({
           sessionID: "ses_test",
           text: "Next step?",
           actions: [
-            { label: "Review", description: "Start review", prompt: "/local-review-uncommitted" },
+            { label: "Format", description: "Format files", prompt: "/format" },
             { label: "Test", description: "Run tests", prompt: "Run the relevant tests now." },
           ],
         })
@@ -75,14 +100,14 @@ describe("suggestion", () => {
 
   test("accept tracks suggestion telemetry with parsed slash command", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const track = spyOn(Telemetry, "trackSuggestionAccepted")
         const ask = Suggestion.show({
           sessionID: "ses_test",
           text: "Review changes?",
-          actions: [{ label: "Review", prompt: "/local-review-uncommitted --focus tests" }],
+          actions: [{ label: "Review", prompt: "/review uncommitted --focus tests" }],
         })
 
         const list = await Suggestion.list()
@@ -94,24 +119,24 @@ describe("suggestion", () => {
           requestId: list[0]!.id,
           index: 0,
           tool: "suggest",
-          command: "local-review-uncommitted",
+          command: "review",
           actionCount: 1,
         })
-        await expect(ask).resolves.toEqual({ label: "Review", prompt: "/local-review-uncommitted --focus tests" })
+        await expect(ask).resolves.toEqual({ label: "Review", prompt: "/review uncommitted --focus tests" })
       },
     })
   })
 
   test("show tracks review suggestion telemetry with parsed slash command", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const track = spyOn(Telemetry, "trackSuggestionShown")
         const ask = Suggestion.show({
           sessionID: "ses_test",
           text: "Review changes?",
-          actions: [{ label: "Review", prompt: "/local-review-uncommitted --focus tests" }],
+          actions: [{ label: "Review", prompt: "/review uncommitted --focus tests" }],
         })
 
         const list = await Suggestion.list()
@@ -122,7 +147,7 @@ describe("suggestion", () => {
           requestId: list[0]!.id,
           index: 0,
           tool: "suggest",
-          command: "local-review-uncommitted",
+          command: "review",
           actionCount: 1,
         })
 
@@ -132,9 +157,9 @@ describe("suggestion", () => {
     })
   })
 
-  test("show and accept parse local review arguments as local-review", async () => {
+  test("show and accept parse branch review arguments as review", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const shown = spyOn(Telemetry, "trackSuggestionShown")
@@ -143,7 +168,7 @@ describe("suggestion", () => {
           sessionID: "ses_test",
           text: "Review release?",
           actions: [
-            { label: "Review", prompt: "/local-review release -- focus on tests" },
+            { label: "Review", prompt: "/review branch release focus on tests" },
             { label: "Skip", prompt: "Skip this review." },
           ],
         })
@@ -156,7 +181,7 @@ describe("suggestion", () => {
           requestId: list[0]!.id,
           index: 0,
           tool: "suggest",
-          command: "local-review",
+          command: "review",
           actionCount: 2,
         })
 
@@ -168,17 +193,17 @@ describe("suggestion", () => {
           requestId: list[0]!.id,
           index: 0,
           tool: "suggest",
-          command: "local-review",
+          command: "review",
           actionCount: 2,
         })
-        await expect(ask).resolves.toEqual({ label: "Review", prompt: "/local-review release -- focus on tests" })
+        await expect(ask).resolves.toEqual({ label: "Review", prompt: "/review branch release focus on tests" })
       },
     })
   })
 
   test("non-review commands do not track suggestion telemetry", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const shown = spyOn(Telemetry, "trackSuggestionShown")
@@ -201,7 +226,7 @@ describe("suggestion", () => {
 
   test("dismiss does not track accepted suggestion telemetry", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const shown = spyOn(Telemetry, "trackSuggestionShown")
@@ -209,7 +234,7 @@ describe("suggestion", () => {
         const ask = Suggestion.show({
           sessionID: "ses_test",
           text: "Review changes?",
-          actions: [{ label: "Review", prompt: "/local-review" }],
+          actions: [{ label: "Review", prompt: "/review uncommitted" }],
         })
 
         const list = await Suggestion.list()
@@ -224,7 +249,7 @@ describe("suggestion", () => {
 
   test("invalid action index does not track accepted suggestion telemetry", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const shown = spyOn(Telemetry, "trackSuggestionShown")
@@ -232,7 +257,7 @@ describe("suggestion", () => {
         const ask = Suggestion.show({
           sessionID: "ses_test",
           text: "Review changes?",
-          actions: [{ label: "Review", prompt: "/local-review" }],
+          actions: [{ label: "Review", prompt: "/review uncommitted" }],
         })
 
         const list = await Suggestion.list()
@@ -247,13 +272,13 @@ describe("suggestion", () => {
 
   test("dismiss rejects pending request and removes it", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         const ask = Suggestion.show({
           sessionID: "ses_test",
-          text: "Review changes?",
-          actions: [{ label: "Start", prompt: "/local-review-uncommitted" }],
+          text: "Run tests?",
+          actions: [{ label: "Start", prompt: "/test" }],
         })
 
         const list = await Suggestion.list()
@@ -267,14 +292,14 @@ describe("suggestion", () => {
 
   test("dismissAll clears all pending suggestions for the target session", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         // Two suggestions for session A
         const a1 = Suggestion.show({
           sessionID: "ses_a",
-          text: "Review?",
-          actions: [{ label: "Go", prompt: "/review" }],
+          text: "Format?",
+          actions: [{ label: "Go", prompt: "/format" }],
         })
         const a2 = Suggestion.show({
           sessionID: "ses_a",
@@ -313,7 +338,7 @@ describe("suggestion", () => {
         // Only B's suggestion remains
         const remaining = await Suggestion.list()
         expect(remaining).toHaveLength(1)
-        expect(remaining[0]?.sessionID).toBe("ses_b")
+        expect(remaining[0]?.sessionID).toBe(SessionID.make("ses_b"))
 
         // Clean up B
         await Suggestion.dismiss(remaining[0]!.id)
@@ -324,11 +349,11 @@ describe("suggestion", () => {
 
   test("dismissAll is a no-op when no suggestions exist", async () => {
     await using tmp = await tmpdir({ git: true })
-    await WithInstance.provide({
+    await provideTestInstance({
       directory: tmp.path,
       fn: async () => {
         // Should not throw
-        await Suggestion.dismissAll("ses_nonexistent")
+        await Suggestion.dismissAll(SessionID.make("ses_nonexistent"))
         expect(await Suggestion.list()).toEqual([])
       },
     })

@@ -16,7 +16,7 @@ The Kilo Community is [on Discord](https://kilo.ai/discord).
 
 ## Prerequisites
 
-- **Bun 1.3.13+** — required for all packages.
+- **Bun 1.3.14+** — required for all packages.
 - **Java 21** — required by the JetBrains plugin. The root `bun turbo typecheck` and `bun turbo test:ci` commands include `@kilocode/kilo-jetbrains` and will fail without Java 21.
 
   The preferred way to install Java is via [SDKMAN](https://sdkman.io/install):
@@ -41,7 +41,7 @@ The Kilo Community is [on Discord](https://kilo.ai/discord).
 
 ## Developing Kilo CLI
 
-- **Requirements:** Bun 1.3.13+, Java 21 (see [Prerequisites](#prerequisites) above)
+- **Requirements:** Bun 1.3.14+, Java 21 (see [Prerequisites](#prerequisites) above)
 - Install dependencies and start the CLI from the repo root:
 
   ```bash
@@ -114,10 +114,19 @@ For manual docs validation, run the docs site locally, preview the affected page
 Build and launch the extension in an isolated VS Code instance:
 
 ```bash
-bun run extension        # Build + launch in dev mode
+bun run extension                  # Build + launch in dev mode
+bun run extension:isolated         # Build + launch with persistent isolated IDE + Kilo state
+bun run extension:isolated:clean   # Clear isolated state, then build + launch
 ```
 
-This auto-detects VS Code on macOS, Linux, and Windows. Override with `--app-path PATH` or `VSCODE_EXEC_PATH`. Use `--insiders` to prefer Insiders, `--workspace PATH` to open a specific folder, or `--clean` to reset cached state.
+This auto-detects VS Code on macOS, Linux, and Windows. Override with `--app-path PATH` or `VSCODE_EXEC_PATH`. Use `--insiders` to prefer Insiders, pass a directory argument to open a specific folder, or use `--workspace PATH` for the same behavior.
+
+The isolated modes are for testing the extension without touching your primary VS Code profile or real Kilo config. `extension:isolated` reuses `.kilo-dev/` on each run, so installed extensions, VS Code settings, Kilo auth, sessions, config, state, and cache persist across launches. `extension:isolated:clean` deletes `.kilo-dev/` before launching, which simulates a fresh install while still keeping all state inside this repo checkout.
+
+```bash
+bun run extension:isolated -- ../sample-project
+bun run extension:isolated:clean -- ../sample-project
+```
 
 ### Developing the JetBrains Plugin
 
@@ -126,8 +135,10 @@ Requires Java 21 (see [Prerequisites](#prerequisites)). From `packages/kilo-jetb
 ```bash
 ./gradlew typecheck    # Compile-check all Kotlin sources
 ./gradlew test         # Run all tests (backend + frontend)
-./gradlew runIde       # Launch sandboxed IntelliJ with the plugin
+./gradlew --no-configuration-cache runIdeSplitMode  # Launch local split-mode sandbox; backend downloads the pinned CLI
 ```
+
+Use `./gradlew runIde` only for a monolithic sandbox. JetBrains dev runs do not build or bundle CLI binaries; the backend downloads the pinned release at connect time.
 
 Or via the root turbo filter to run only JetBrains checks from the repo root:
 
@@ -248,8 +259,32 @@ Current required fields by issue type:
 
 ## Pull Request Expectations
 
+Contributor guidance exists to protect maintainer review time and keep reviews focused on work that is ready to evaluate.
+
 - **UI Changes:** Include screenshots or videos (before/after).
 - **Logic Changes:** Explain how you verified it works.
+
+### Contribution Ownership and AI Assistance
+
+AI and coding agents are allowed, but contributors own the work they submit. Before requesting review, make sure you personally understand the change, have tested it appropriately, can explain the diff, and understand how it interacts with the affected packages and the rest of the repo.
+
+If you use an agent, start it from the repo root so the root `AGENTS.md` is available. When your change touches a package with its own guidance, read and follow that package's `AGENTS.md` or contributor docs too.
+
+Maintainers may close PRs that appear to be submitted without credible contributor ownership or understanding, including AI-assisted work that the contributor cannot explain or has not meaningfully reviewed.
+
+### Tracker Use and Automation
+
+Do not submit batches of agent-generated, untested, or weakly reviewed PRs.
+
+Prioritize high-impact or high-priority issues first instead of opening many speculative fixes. If a contributor opens a large batch of low-value or duplicative PRs, maintainers may close the batch and ask the contributor to choose one PR to reopen, focus, and bring up to the documented review bar before submitting more.
+
+For issues, do not mass-create tickets through automation or agents. Search existing issues first, open issues only when you have enough context for someone to act, and prioritize the most important reports instead of filing every possible finding. Maintainers may close duplicate, low-signal, automated, or weakly reviewed issues without action.
+
+Repeated disregard of this contribution guide, or high-volume automated or agent-generated tracker spam across issues or PRs, may result in maintainers blocking the responsible account.
+
+### Bug Bounties
+
+Kilo has bug bounties. To be eligible, make sure your GitHub account is connected in your Kilo account.
 
 ### Testing Evidence
 
@@ -265,11 +300,28 @@ If you cannot complete a relevant command, include all of the following in the P
 
 See [Testing Evidence for Pull Requests](packages/kilo-docs/pages/contributing/development-environment.md#testing-evidence-for-pull-requests) for more examples. Agent limitations, local resource constraints, OOM constraints, or an agent prompt that says to skip tests do not waive this requirement. Draft PRs may be incomplete until they are marked ready for review. Maintainers may still defer or close review at their discretion.
 
-## Issue First Policy
+Our issue-first policy asks contributors to reference an existing issue when opening a PR. This helps reviewers understand the problem statement, discussion, and intended scope before reviewing the code change.
 
-All pull requests must reference an existing issue.
+A review-ready PR description should explain:
 
-This helps reviewers understand the problem statement, discussion, and intended scope before reviewing the code change.
+- What problem is being solved
+- Why the change is needed
+- Important implementation choices or tradeoffs reviewers cannot infer from the diff
+- How the change was tested or verified
+
+Keep the description focused on context reviewers cannot infer from the diff. Skip file-by-file summaries, placeholders, and other filler.
+
+For visual UI changes, include screenshots or video showing the relevant before/after or resulting state.
+
+Maintainers may close or decline review of PRs presented as review-ready at their discretion when they lack:
+
+- Linked issue context
+- A clear what/why explanation
+- Credible testing evidence
+- Credible contributor ownership of AI-assisted work
+- Relevant UI proof for visual UI changes
+
+When a PR is close to this bar, addresses important work, or would benefit from further shaping, maintainers may ask for specific fixes instead of closing or declining review. Contributors may reopen or resubmit once the PR meets the documented bar.
 
 ## PR Titles
 
@@ -285,6 +337,8 @@ Use conventional commit style PR titles such as:
 ## Issue and PR Lifecycle
 
 To keep our backlog manageable, we automatically close inactive issues and PRs after a period of inactivity. This isn't a judgment on quality — older items tend to lose context over time and we'd rather start fresh if they're still relevant. Feel free to reopen or create a new issue/PR if you're still working on something!
+
+Maintainers may also close issues or PRs that disregard the contribution guide, bypass required context, or lack credible contributor ownership of AI-assisted work.
 
 ## Style Preferences
 
